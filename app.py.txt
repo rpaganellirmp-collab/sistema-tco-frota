@@ -1,0 +1,75 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+# 1. Configuração da Página
+st.set_page_config(page_title="Gestor de Frotas Inteligente", layout="wide")
+
+# 2. Carregar Dados
+@st.cache_data
+def carregar_dados():
+    # Tenta carregar o arquivo CSV
+    try:
+        return pd.read_csv("dados_frota.csv")
+    except:
+        # Se não achar o arquivo, cria dados de exemplo para não dar erro
+        return pd.DataFrame({
+            'Modelo': ['Exemplo Carro A', 'Exemplo Carro B'],
+            'Preco_Total': [150000, 200000],
+            'Custo_KM': [1.5, 1.2],
+            'Emissao_CO2_Fossil': [180, 150],
+            'Score_Opcionais': [40, 50]
+        })
+
+df = carregar_dados()
+
+# 3. Interface Lateral (Controles)
+st.sidebar.title("🎛️ Painel de Decisão")
+st.sidebar.markdown("Defina o que é prioridade para sua frota:")
+
+peso_custo = st.sidebar.slider("Peso: Custo Financeiro (TCO)", 0, 100, 50)
+peso_esg = st.sidebar.slider("Peso: Sustentabilidade (CO2)", 0, 100, 30)
+peso_conforto = st.sidebar.slider("Peso: Conforto/Opcionais", 0, 100, 20)
+
+# Garantir que não dê divisão por zero
+soma_pesos = peso_custo + peso_esg + peso_conforto
+if soma_pesos == 0: soma_pesos = 1
+
+# 4. O Motor de Cálculo (O Segredo)
+# Normalizamos tudo para notas de 0 a 100
+df['Nota_Custo'] = 100 * (df['Custo_KM'].min() / df['Custo_KM']) # Menor custo = Maior nota
+df['Nota_ESG'] = 100 * (df['Emissao_CO2_Fossil'].min() / df['Emissao_CO2_Fossil']) # Menor CO2 = Maior nota
+df['Nota_Conforto'] = 100 * (df['Score_Opcionais'] / df['Score_Opcionais'].max()) # Maior score = Maior nota
+
+# Cálculo final
+df['Score_Final'] = (
+    (df['Nota_Custo'] * peso_custo) +
+    (df['Nota_ESG'] * peso_esg) +
+    (df['Nota_Conforto'] * peso_conforto)
+) / soma_pesos
+
+# Ordenar Ranking
+df_ranking = df.sort_values(by='Score_Final', ascending=False).reset_index(drop=True)
+
+# 5. O Dashboard (O que o cliente vê)
+st.title("🚗 Sistema de Decisão de Frotas B2B")
+st.markdown("Algoritmo de recomendação baseado em TCO, ESG e Especificações Técnicas.")
+
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    st.subheader("🥇 A Melhor Escolha")
+    campeao = df_ranking.iloc[0]
+    st.metric(label="Veículo Recomendado", value=campeao['Modelo'])
+    st.metric(label="Score Final (0-100)", value=f"{campeao['Score_Final']:.1f}")
+    st.markdown(f"**Custo/Km:** R$ {campeao['Custo_KM']}")
+    st.markdown(f"**Emissão CO2:** {campeao['Emissao_CO2_Fossil']} g/km")
+
+with col2:
+    st.subheader("📊 Ranking Completo")
+    fig = px.bar(df_ranking, x='Score_Final', y='Modelo', orientation='h', color='Score_Final',
+                 color_continuous_scale='Bluered_r', text_auto='.1f')
+    fig.update_layout(yaxis={'categoryorder':'total ascending'})
+    st.plotly_chart(fig, use_container_width=True)
+
+st.dataframe(df_ranking[['Modelo', 'Custo_KM', 'Emissao_CO2_Fossil', 'Score_Opcionais', 'Score_Final']], use_container_width=True)
